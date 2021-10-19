@@ -1,0 +1,13 @@
+<component name="libraryTable">
+  <library name="Maven: org.apache.hadoop:hadoop-auth:test-jar:tests:2.9.2">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/../../../java/maven/repository/org/apache/hadoop/hadoop-auth/2.9.2/hadoop-auth-2.9.2-tests.jar!/" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$PROJECT_DIR$/../../../java/maven/repository/org/apache/hadoop/hadoop-auth/2.9.2/hadoop-auth-2.9.2-test-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$PROJECT_DIR$/../../../java/maven/repository/org/apache/hadoop/hadoop-auth/2.9.2/hadoop-auth-2.9.2-test-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

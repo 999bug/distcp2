@@ -1,0 +1,13 @@
+<component name="libraryTable">
+  <library name="Maven: org.apache.hadoop:hadoop-yarn-server-timelineservice:test-jar:tests:2.9.2">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/../../../java/maven/repository/org/apache/hadoop/hadoop-yarn-server-timelineservice/2.9.2/hadoop-yarn-server-timelineservice-2.9.2-tests.jar!/" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$PROJECT_DIR$/../../../java/maven/repository/org/apache/hadoop/hadoop-yarn-server-timelineservice/2.9.2/hadoop-yarn-server-timelineservice-2.9.2-test-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$PROJECT_DIR$/../../../java/maven/repository/org/apache/hadoop/hadoop-yarn-server-timelineservice/2.9.2/hadoop-yarn-server-timelineservice-2.9.2-test-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>
