@@ -265,7 +265,7 @@ public class CopyMapper extends Mapper<Text, CopyListingFileStatus, Text, Text> 
                 throw new IOException("Can't replace " + target + ". Target is " +
                         getFileType(targetStatus) + ", Source is " + getFileType(sourceCurrStatus));
             }
-            // 如果源文件是目录，则
+            // 如果源文件是目录，则创建一个目录
             if (sourceCurrStatus.isDirectory()) {
                 createTargetDirsWithRetry(description, target, context);
                 return;
@@ -295,11 +295,9 @@ public class CopyMapper extends Mapper<Text, CopyListingFileStatus, Text, Text> 
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("copying " + sourceCurrStatus + " " + tmpTarget);
                 }// 主要拷贝实现的地方
-                copyFileWithRetry(description, sourceCurrStatus, tmpTarget,
-                        targetStatus, context, action, fileAttributes);
+                copyFileWithRetry(description, sourceCurrStatus, tmpTarget, targetStatus, context, action, fileAttributes);
             }
-            DistCpUtils.preserve(target.getFileSystem(conf), tmpTarget,
-                    sourceCurrStatus, fileAttributes, preserveRawXattrs);
+            DistCpUtils.preserve(target.getFileSystem(conf), tmpTarget, sourceCurrStatus, fileAttributes, preserveRawXattrs);
             logger.warn("===========map {} end!==============", a++);
         } catch (IOException exception) {
             handleFailures(exception, sourceFileStatus, target, context);
@@ -333,10 +331,11 @@ public class CopyMapper extends Mapper<Text, CopyListingFileStatus, Text, Text> 
                                    FileStatus targrtFileStatus, Context context, FileAction action,
                                    EnumSet<DistCpOptions.FileAttribute> fileAttributes)
             throws IOException, InterruptedException {
+
         long bytesCopied;
         try {
-            bytesCopied = (Long) new RetriableFileCopyCommand(skipCrc, description,
-                    action).execute(sourceFileStatus, target, context, fileAttributes);
+            bytesCopied = (Long) new RetriableFileCopyCommand(skipCrc, description, action)
+                    .execute(sourceFileStatus, target, context, fileAttributes);
         } catch (Exception e) {
             context.setStatus("Copy Failure: " + sourceFileStatus.getPath());
             throw new IOException("File copy failed: " + sourceFileStatus.getPath() +
@@ -404,12 +403,11 @@ public class CopyMapper extends Mapper<Text, CopyListingFileStatus, Text, Text> 
             if (canSkip(sourceFS, source, targetFileStatus)) {
                 return FileAction.SKIP;
             } else if (append) {
+                logger.warn("append 运行了么 " + append);
                 long targetLen = targetFileStatus.getLen();
                 if (targetLen < source.getLen()) {
-                    FileChecksum sourceChecksum = sourceFS.getFileChecksum(
-                            source.getPath(), targetLen);
-                    if (sourceChecksum != null
-                            && sourceChecksum.equals(targetFS.getFileChecksum(target))) {
+                    FileChecksum sourceChecksum = sourceFS.getFileChecksum(source.getPath(), targetLen);
+                    if (sourceChecksum != null && sourceChecksum.equals(targetFS.getFileChecksum(target))) {
                         // We require that the checksum is not null. Thus currently only
                         // DistributedFileSystem is supported
                         return FileAction.APPEND;
@@ -419,19 +417,19 @@ public class CopyMapper extends Mapper<Text, CopyListingFileStatus, Text, Text> 
         }
         return FileAction.OVERWRITE;
     }
-
+    // 判断是否需要跳过此文件
     private boolean canSkip(FileSystem sourceFS, CopyListingFileStatus source,
                             FileStatus target) throws IOException {
         if (!syncFolders) {
             return true;
         }
         boolean sameLength = target.getLen() == source.getLen();
-        boolean sameBlockSize = source.getBlockSize() == target.getBlockSize()
-                || !preserve.contains(FileAttribute.BLOCKSIZE);
+        boolean sameBlockSize = source.getBlockSize() == target.getBlockSize() || !preserve.contains(FileAttribute.BLOCKSIZE);
+        logger.warn("skip " +  DistCpUtils.checksumsAreEqual(sourceFS, source.getPath(), null, targetFS, target.getPath()));
         if (sameLength && sameBlockSize) {
             return skipCrc ||
-                    DistCpUtils.checksumsAreEqual(sourceFS, source.getPath(), null,
-                            targetFS, target.getPath());
+                    DistCpUtils.checksumsAreEqual(sourceFS, source.getPath(), null, targetFS, target.getPath());
+
         } else {
             return false;
         }

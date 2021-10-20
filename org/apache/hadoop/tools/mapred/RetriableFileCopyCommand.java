@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -53,309 +53,327 @@ import com.google.common.annotations.VisibleForTesting;
  */
 public class RetriableFileCopyCommand extends RetriableCommand {
 
-  private static Log LOG = LogFactory.getLog(RetriableFileCopyCommand.class);
-  private boolean skipCrc = false;
-  private FileAction action;
+    private static Log logger = LogFactory.getLog(RetriableFileCopyCommand.class);
+    private boolean skipCrc = false;
+    private FileAction action;
 
-  /**
-   * Constructor, taking a description of the action.
-   * @param description Verbose description of the copy operation.
-   */
-  public RetriableFileCopyCommand(String description, FileAction action) {
-    super(description);
-    this.action = action;
-  }
+    /**
+     * Constructor, taking a description of the action.
+     *
+     * @param description Verbose description of the copy operation.
+     */
+    public RetriableFileCopyCommand(String description, FileAction action) {
+        super(description);
+        this.action = action;
+    }
 
-  /**
-   * Create a RetriableFileCopyCommand.
-   *
-   * @param skipCrc Whether to skip the crc check.
-   * @param description A verbose description of the copy operation.
-   * @param action We should overwrite the target file or append new data to it.
-   */
-  public RetriableFileCopyCommand(boolean skipCrc, String description,
-      FileAction action) {
-    this(description, action);
-    this.skipCrc = skipCrc;
-  }
+    /**
+     * Create a RetriableFileCopyCommand.
+     *
+     * @param skipCrc     Whether to skip the crc check.
+     * @param description A verbose description of the copy operation.
+     * @param action      We should overwrite the target file or append new data to it.
+     */
+    public RetriableFileCopyCommand(boolean skipCrc, String description,
+                                    FileAction action) {
+        this(description, action);
+        this.skipCrc = skipCrc;
+    }
 
-  /**
-   * Implementation of RetriableCommand::doExecute().
-   * This is the actual copy-implementation.
-   * @param arguments Argument-list to the command.
-   * @return Number of bytes copied.
-   * @throws Exception
-   */
-  @SuppressWarnings("unchecked")
-  @Override
-  protected Object doExecute(Object... arguments) throws Exception {
-    assert arguments.length == 4 : "Unexpected argument list.";
-    CopyListingFileStatus source = (CopyListingFileStatus)arguments[0];
-    assert !source.isDirectory() : "Unexpected file-status. Expected file.";
-    Path target = (Path)arguments[1];
-    Mapper.Context context = (Mapper.Context)arguments[2];
-    EnumSet<FileAttribute> fileAttributes
-            = (EnumSet<FileAttribute>)arguments[3];
-    return doCopy(source, target, context, fileAttributes);
-  }
+    /**
+     * Implementation of RetriableCommand::doExecute().
+     * This is the actual copy-implementation.
+     *
+     * @param arguments Argument-list to the command.
+     * @return Number of bytes copied.
+     * @throws Exception
+     */
+    @SuppressWarnings("unchecked")
+    @Override
+    protected Object doExecute(Object... arguments) throws Exception {
+        assert arguments.length == 4 : "Unexpected argument list.";
+        CopyListingFileStatus source = (CopyListingFileStatus) arguments[0];
+        assert !source.isDirectory() : "Unexpected file-status. Expected file.";
+        Path target = (Path) arguments[1];
+        Mapper.Context context = (Mapper.Context) arguments[2];
+        EnumSet<FileAttribute> fileAttributes
+                = (EnumSet<FileAttribute>) arguments[3];
+        return doCopy(source, target, context, fileAttributes);
+    }
 
-  private long doCopy(CopyListingFileStatus source, Path target,
-      Mapper.Context context, EnumSet<FileAttribute> fileAttributes)
-      throws IOException {
-    final boolean toAppend = action == FileAction.APPEND;
-    Path targetPath = toAppend ? target : getTmpFile(target, context);
-    final Configuration configuration = context.getConfiguration();
-    FileSystem targetFS = target.getFileSystem(configuration);
+    private long doCopy(CopyListingFileStatus source, Path target,
+                        Mapper.Context context, EnumSet<FileAttribute> fileAttributes)
+            throws IOException {
+        final boolean toAppend = action == FileAction.APPEND;
+        Path targetPath = toAppend ? target : getTmpFile(target, context);
+        logger.warn("targetPath " + targetPath);
+        final Configuration configuration = context.getConfiguration();
+        FileSystem targetFS = target.getFileSystem(configuration);
 
-    try {
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Copying " + source.getPath() + " to " + target);
-        LOG.debug("Target file path: " + targetPath);
-      }
-      final Path sourcePath = source.getPath();
-      final FileSystem sourceFS = sourcePath.getFileSystem(configuration);
-      final FileChecksum sourceChecksum = fileAttributes
-          .contains(FileAttribute.CHECKSUMTYPE) ? sourceFS
-          .getFileChecksum(sourcePath) : null;
+        try {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Copying " + source.getPath() + " to " + target);
+                logger.debug("Target file path: " + targetPath);
+            }
+            final Path sourcePath = source.getPath();
+            final FileSystem sourceFS = sourcePath.getFileSystem(configuration);
+            final FileChecksum sourceChecksum = fileAttributes.contains(FileAttribute.CHECKSUMTYPE) ?
+                    sourceFS.getFileChecksum(sourcePath) : null;
 
-      long offset = (action == FileAction.APPEND) ?
-          targetFS.getFileStatus(target).getLen() : source.getChunkOffset();
-      long bytesRead = copyToFile(targetPath, targetFS, source,
-          offset, context, fileAttributes, sourceChecksum);
+            long offset = (action == FileAction.APPEND) ?
+                    targetFS.getFileStatus(target).getLen() : source.getChunkOffset();
+            logger.warn("offset " + offset);
+            long bytesRead = copyToFile(targetPath, targetFS, source,
+                    offset, context, fileAttributes, sourceChecksum);
 
-      if (!source.isSplit()) {
-        compareFileLengths(source, targetPath, configuration, bytesRead
-            + offset);
-      }
-      //At this point, src&dest lengths are same. if length==0, we skip checksum
-      if ((bytesRead != 0) && (!skipCrc)) {
-        if (!source.isSplit()) {
-          compareCheckSums(sourceFS, source.getPath(), sourceChecksum,
-              targetFS, targetPath);
+            if (!source.isSplit()) {
+                // 检查传输文件的大小是否一致
+                compareFileLengths(source, targetPath, configuration, bytesRead
+                        + offset);
+            }
+            //At this point, src&dest lengths are same. if length==0, we skip checksum
+            // 在这一点上，src和dest的长度是相同的。 如果长度==0，我们就跳过校验。
+            if ((bytesRead != 0) && (!skipCrc)) {
+                if (!source.isSplit()) {
+                    compareCheckSums(sourceFS, source.getPath(), sourceChecksum,
+                            targetFS, targetPath);
+                }
+            }
+            // it's not append case, thus we first write to a temporary file, rename it to the target path.
+            //这不是追加的情况，因此我们首先写到一个临时文件，然后重命名为它到目标路径。
+            if (!toAppend) {
+                promoteTmpToTarget(targetPath, target, targetFS);
+            }
+            return bytesRead;
+
+        } finally {
+            // note that for append case, it is possible that we append partial data
+            // and then fail. In that case, for the next retry, we either reuse the
+            // partial appended data if it is good or we overwrite the whole file
+           /*  请注意，在追加的情况下，有可能我们追加了部分数据然后失败。
+           在这种情况下，对于下一次重试，我们要么重新使用部分数据，如果它是好的，或者我们覆盖整个文件*/
+            if (!toAppend) {
+                targetFS.delete(targetPath, false);
+            }
         }
-      }
-      // it's not append case, thus we first write to a temporary file, rename
-      // it to the target path.
-      if (!toAppend) {
-        promoteTmpToTarget(targetPath, target, targetFS);
-      }
-      return bytesRead;
-    } finally {
-      // note that for append case, it is possible that we append partial data
-      // and then fail. In that case, for the next retry, we either reuse the
-      // partial appended data if it is good or we overwrite the whole file
-      if (!toAppend) {
-        targetFS.delete(targetPath, false);
-      }
     }
-  }
 
-  /**
-   * @return the checksum spec of the source checksum if checksum type should be
-   *         preserved
-   */
-  private ChecksumOpt getChecksumOpt(EnumSet<FileAttribute> fileAttributes,
-      FileChecksum sourceChecksum) {
-    if (fileAttributes.contains(FileAttribute.CHECKSUMTYPE)
-        && sourceChecksum != null) {
-      return sourceChecksum.getChecksumOpt();
-    }
-    return null;
-  }
-
-  private long copyToFile(Path targetPath, FileSystem targetFS,
-      CopyListingFileStatus source, long sourceOffset, Mapper.Context context,
-      EnumSet<FileAttribute> fileAttributes, final FileChecksum sourceChecksum)
-      throws IOException {
-    FsPermission permission = FsPermission.getFileDefault().applyUMask(
-        FsPermission.getUMask(targetFS.getConf()));// 获取许可 permission
-    int copyBufferSize = context.getConfiguration().getInt(
-        DistCpOptionSwitch.COPY_BUFFER_SIZE.getConfigLabel(),
-        DistCpConstants.COPY_BUFFER_SIZE_DEFAULT);
-    final OutputStream outStream;
-    if (action == FileAction.OVERWRITE) {
-      final short repl = getReplicationFactor(fileAttributes, source,
-          targetFS, targetPath);
-      final long blockSize = getBlockSize(fileAttributes, source,
-          targetFS, targetPath);
-      FSDataOutputStream out = targetFS.create(targetPath, permission,
-          EnumSet.of(CreateFlag.CREATE, CreateFlag.OVERWRITE),
-          copyBufferSize, repl, blockSize, context,
-          getChecksumOpt(fileAttributes, sourceChecksum));
-      outStream = new BufferedOutputStream(out);
-    } else {
-      outStream = new BufferedOutputStream(targetFS.append(targetPath,
-          copyBufferSize));
-    }
-    return copyBytes(source, sourceOffset, outStream, copyBufferSize,
-        context);
-  }
-
-  private void compareFileLengths(CopyListingFileStatus source, Path target,
-                                  Configuration configuration, long targetLen)
-                                  throws IOException {
-    final Path sourcePath = source.getPath();
-    FileSystem fs = sourcePath.getFileSystem(configuration);
-    long srcLen = fs.getFileStatus(sourcePath).getLen();
-    if (srcLen != targetLen)
-      throw new IOException("Mismatch in length of source:" + sourcePath + " (" + srcLen +
-          ") and target:" + target + " (" + targetLen + ")");
-  }
-
-  private void compareCheckSums(FileSystem sourceFS, Path source,
-      FileChecksum sourceChecksum, FileSystem targetFS, Path target)
-      throws IOException {
-    if (!DistCpUtils.checksumsAreEqual(sourceFS, source, sourceChecksum,
-        targetFS, target)) {
-      StringBuilder errorMessage = new StringBuilder("Check-sum mismatch between ")
-          .append(source).append(" and ").append(target).append(".");
-      if (sourceFS.getFileStatus(source).getBlockSize() !=
-          targetFS.getFileStatus(target).getBlockSize()) {
-        errorMessage.append(" Source and target differ in block-size.")
-            .append(" Use -pb to preserve block-sizes during copy.")
-            .append(" Alternatively, skip checksum-checks altogether, using -skipCrc.")
-            .append(" (NOTE: By skipping checksums, one runs the risk of " +
-                "masking data-corruption during file-transfer.)");
-      }
-      throw new IOException(errorMessage.toString());
-    }
-  }
-
-  //If target file exists and unable to delete target - fail
-  //If target doesn't exist and unable to create parent folder - fail
-  //If target is successfully deleted and parent exists, if rename fails - fail
-  private void promoteTmpToTarget(Path tmpTarget, Path target, FileSystem fs)
-                                  throws IOException {
-    if ((fs.exists(target) && !fs.delete(target, false))
-        || (!fs.exists(target.getParent()) && !fs.mkdirs(target.getParent()))
-        || !fs.rename(tmpTarget, target)) {
-      throw new IOException("Failed to promote tmp-file:" + tmpTarget
-                              + " to: " + target);
-    }
-  }
-
-  private Path getTmpFile(Path target, Mapper.Context context) {
-    Path targetWorkPath = new Path(context.getConfiguration().
-        get(DistCpConstants.CONF_LABEL_TARGET_WORK_PATH));
-
-    Path root = target.equals(targetWorkPath)? targetWorkPath.getParent() : targetWorkPath;
-    LOG.info("Creating temp file: " +
-        new Path(root, ".distcp.tmp." + context.getTaskAttemptID().toString()));
-    return new Path(root, ".distcp.tmp." + context.getTaskAttemptID().toString());
-  }
-
-  @VisibleForTesting
-  long copyBytes(CopyListingFileStatus source2, long sourceOffset,
-      OutputStream outStream, int bufferSize, Mapper.Context context)
-      throws IOException {
-    Path source = source2.getPath();
-    byte buf[] = new byte[bufferSize];
-    ThrottledInputStream inStream = null;
-    long totalBytesRead = 0;
-
-    long chunkLength = source2.getChunkLength();
-    boolean finished = false;
-    try {
-      inStream = getInputStream(source, context.getConfiguration());
-      int bytesRead = readBytes(inStream, buf, sourceOffset);
-      while (bytesRead >= 0) {
-        if (chunkLength > 0 &&
-            (totalBytesRead + bytesRead) >= chunkLength) {
-          bytesRead = (int)(chunkLength - totalBytesRead);
-          finished = true;
+    /**
+     * @return the checksum spec of the source checksum if checksum type should be
+     * preserved
+     */
+    private ChecksumOpt getChecksumOpt(EnumSet<FileAttribute> fileAttributes,
+                                       FileChecksum sourceChecksum) {
+        if (fileAttributes.contains(FileAttribute.CHECKSUMTYPE)
+                && sourceChecksum != null) {
+            return sourceChecksum.getChecksumOpt();
         }
-        totalBytesRead += bytesRead;
-        if (action == FileAction.APPEND) {
-          sourceOffset += bytesRead;
-        }
-        outStream.write(buf, 0, bytesRead);
-        updateContextStatus(totalBytesRead, context, source2);
-        if (finished) {
-          break;
-        }
-        bytesRead = readBytes(inStream, buf, sourceOffset);
-      }
-      outStream.close();
-      outStream = null;
-    } finally {
-      IOUtils.cleanup(LOG, outStream, inStream);
+        return null;
     }
-    return totalBytesRead;
-  }
 
-  private void updateContextStatus(long totalBytesRead, Mapper.Context context,
-                                   CopyListingFileStatus source2) {
-    StringBuilder message = new StringBuilder(DistCpUtils.getFormatter()
+    private long copyToFile(Path targetPath, FileSystem targetFS,
+                            CopyListingFileStatus source, long sourceOffset, Mapper.Context context,
+                            EnumSet<FileAttribute> fileAttributes, final FileChecksum sourceChecksum)
+            throws IOException {
+        // 获取许可 permission
+        FsPermission permission = FsPermission.getFileDefault().applyUMask(
+                FsPermission.getUMask(targetFS.getConf()));
+        // 8192
+        int copyBufferSize = context.getConfiguration().getInt(
+                DistCpOptionSwitch.COPY_BUFFER_SIZE.getConfigLabel(),
+                DistCpConstants.COPY_BUFFER_SIZE_DEFAULT);
+
+        final OutputStream outStream;
+        if (action == FileAction.OVERWRITE) {
+            final short repl = getReplicationFactor(fileAttributes, source,
+                    targetFS, targetPath);
+            final long blockSize = getBlockSize(fileAttributes, source,
+                    targetFS, targetPath);// 默认128MB
+            // 创建目标端的文件流
+            FSDataOutputStream out = targetFS.create(targetPath, permission,
+                    EnumSet.of(CreateFlag.CREATE, CreateFlag.OVERWRITE),
+                    copyBufferSize, repl, blockSize, context,
+                    getChecksumOpt(fileAttributes, sourceChecksum));
+            outStream = new BufferedOutputStream(out);
+        } else {
+            outStream = new BufferedOutputStream(targetFS.append(targetPath,
+                    copyBufferSize));
+        }
+
+        return copyBytes(source, sourceOffset, outStream, copyBufferSize,
+                context);
+    }
+
+    private void compareFileLengths(CopyListingFileStatus source, Path target,
+                                    Configuration configuration, long targetLen)
+            throws IOException {
+        final Path sourcePath = source.getPath();
+        FileSystem fs = sourcePath.getFileSystem(configuration);
+        long srcLen = fs.getFileStatus(sourcePath).getLen();
+        if (srcLen != targetLen)
+            throw new IOException("Mismatch in length of source:" + sourcePath + " (" + srcLen +
+                    ") and target:" + target + " (" + targetLen + ")");
+    }
+
+    private void compareCheckSums(FileSystem sourceFS, Path source,
+                                  FileChecksum sourceChecksum, FileSystem targetFS, Path target)
+            throws IOException {
+        if (!DistCpUtils.checksumsAreEqual(sourceFS, source, sourceChecksum,
+                targetFS, target)) {
+            StringBuilder errorMessage = new StringBuilder("Check-sum mismatch between ")
+                    .append(source).append(" and ").append(target).append(".");
+            if (sourceFS.getFileStatus(source).getBlockSize() !=
+                    targetFS.getFileStatus(target).getBlockSize()) {
+                errorMessage.append(" Source and target differ in block-size.")
+                        .append(" Use -pb to preserve block-sizes during copy.")
+                        .append(" Alternatively, skip checksum-checks altogether, using -skipCrc.")
+                        .append(" (NOTE: By skipping checksums, one runs the risk of " +
+                                "masking data-corruption during file-transfer.)");
+            }
+            throw new IOException(errorMessage.toString());
+        }
+    }
+
+
+    /**
+     * 如果目标文件存在且无法删除目标文件--失败     //If target file exists and unable to delete target - fail
+     * 如果目标文件不存在并且无法创建父文件夹--失败   //If target doesn't exist and unable to create parent folder - fail
+     * 如果目标文件被成功删除且父文件夹存在，如果重命名失败--失败    //If target is successfully deleted and parent exists, if rename fails - fail
+     */
+    private void promoteTmpToTarget(Path tmpTarget, Path target, FileSystem fs)
+            throws IOException {
+        if ((fs.exists(target) && !fs.delete(target, false))
+                || (!fs.exists(target.getParent()) && !fs.mkdirs(target.getParent()))
+                || !fs.rename(tmpTarget, target)) {
+            throw new IOException("Failed to promote tmp-file:" + tmpTarget
+                    + " to: " + target);
+        }
+    }
+
+    private Path getTmpFile(Path target, Mapper.Context context) {
+        Path targetWorkPath = new Path(context.getConfiguration().
+                get(DistCpConstants.CONF_LABEL_TARGET_WORK_PATH));
+
+        Path root = target.equals(targetWorkPath) ? targetWorkPath.getParent() : targetWorkPath;
+        logger.info("Creating temp file: " +
+                new Path(root, ".distcp.tmp." + context.getTaskAttemptID().toString()));
+        return new Path(root, ".distcp.tmp." + context.getTaskAttemptID().toString());
+    }
+
+    @VisibleForTesting
+    long copyBytes(CopyListingFileStatus source2, long sourceOffset,
+                   OutputStream outStream, int bufferSize, Mapper.Context context)
+            throws IOException {
+
+        Path source = source2.getPath();
+        byte buf[] = new byte[bufferSize];
+        // 带有带宽限制的 输入流
+        ThrottledInputStream inStream = null;
+        long totalBytesRead = 0;
+
+        long chunkLength = source2.getChunkLength();
+        boolean finished = false;
+        try {
+            inStream = getInputStream(source, context.getConfiguration());
+            int bytesRead = readBytes(inStream, buf, sourceOffset);
+            while (bytesRead >= 0) {
+                if (chunkLength > 0 && (totalBytesRead + bytesRead) >= chunkLength) {
+                    bytesRead = (int) (chunkLength - totalBytesRead);
+                    finished = true;
+                }
+                totalBytesRead += bytesRead;
+                // append
+                if (action == FileAction.APPEND) {
+                    sourceOffset += bytesRead;
+                }
+
+                outStream.write(buf, 0, bytesRead);
+                // 打印 map 的进度
+                updateContextStatus(totalBytesRead, context, source2);
+                if (finished) {
+                    break;
+                }
+                bytesRead = readBytes(inStream, buf, sourceOffset);
+            }
+            outStream.close();
+            outStream = null;
+        } finally {
+            IOUtils.cleanup(logger, outStream, inStream);
+        }
+        return totalBytesRead;
+    }
+
+    private void updateContextStatus(long totalBytesRead, Mapper.Context context,
+                                     CopyListingFileStatus source2) {
+        StringBuilder message = new StringBuilder(DistCpUtils.getFormatter()
                 .format(totalBytesRead * 100.0f / source2.getLen()));
-    message.append("% ")
-            .append(description).append(" [")
-            .append(DistCpUtils.getStringDescriptionFor(totalBytesRead))
-            .append('/')
-        .append(DistCpUtils.getStringDescriptionFor(source2.getLen()))
-            .append(']');
-    context.setStatus(message.toString());
-  }
-
-  private static int readBytes(ThrottledInputStream inStream, byte buf[],
-      long position) throws IOException {
-    try {
-      if (position == 0) {
-        return inStream.read(buf);
-      } else {
-        return inStream.read(position, buf, 0, buf.length);
-      }
-    } catch (IOException e) {
-      throw new CopyReadException(e);
+        message.append("% ")
+                .append(description).append(" [")
+                .append(DistCpUtils.getStringDescriptionFor(totalBytesRead))
+                .append('/')
+                .append(DistCpUtils.getStringDescriptionFor(source2.getLen()))
+                .append(']');
+        context.setStatus(message.toString());
     }
-  }
 
-  private static ThrottledInputStream getInputStream(Path path,
-      Configuration conf) throws IOException {
-    try {
-      FileSystem fs = path.getFileSystem(conf);
-      long bandwidthMB = conf.getInt(DistCpConstants.CONF_LABEL_BANDWIDTH_MB,
-              DistCpConstants.DEFAULT_BANDWIDTH_MB);
-      FSDataInputStream in = fs.open(path);
-      return new ThrottledInputStream(in, bandwidthMB * 1024 * 1024);
+    private static int readBytes(ThrottledInputStream inStream, byte buf[], long position) throws IOException {
+        try {
+            if (position == 0) {
+                return inStream.read(buf);
+            } else {
+                return inStream.read(position, buf, 0, buf.length);
+            }
+        } catch (IOException e) {
+            throw new CopyReadException(e);
+        }
     }
-    catch (IOException e) {
-      throw new CopyReadException(e);
+
+    private static ThrottledInputStream getInputStream(Path path,
+                                                       Configuration conf) throws IOException {
+        try {
+            FileSystem fs = path.getFileSystem(conf);
+            long bandwidthMB = conf.getInt(DistCpConstants.CONF_LABEL_BANDWIDTH_MB,
+                    DistCpConstants.DEFAULT_BANDWIDTH_MB);
+            FSDataInputStream in = fs.open(path);
+            return new ThrottledInputStream(in, bandwidthMB * 1024 * 1024);
+        } catch (IOException e) {
+            throw new CopyReadException(e);
+        }
     }
-  }
 
-  private static short getReplicationFactor(
-          EnumSet<FileAttribute> fileAttributes, CopyListingFileStatus source,
-          FileSystem targetFS, Path tmpTargetPath) {
-    return fileAttributes.contains(FileAttribute.REPLICATION)
-        ? source.getReplication()
-        : targetFS.getDefaultReplication(tmpTargetPath);
-  }
-
-  /**
-   * @return the block size of the source file if we need to preserve either
-   *         the block size or the checksum type. Otherwise the default block
-   *         size of the target FS.
-   */
-  private static long getBlockSize(
-          EnumSet<FileAttribute> fileAttributes, CopyListingFileStatus source,
-          FileSystem targetFS, Path tmpTargetPath) {
-    boolean preserve = fileAttributes.contains(FileAttribute.BLOCKSIZE)
-        || fileAttributes.contains(FileAttribute.CHECKSUMTYPE);
-    return preserve ? source.getBlockSize() : targetFS
-        .getDefaultBlockSize(tmpTargetPath);
-  }
-
-  /**
-   * Special subclass of IOException. This is used to distinguish read-operation
-   * failures from other kinds of IOExceptions.
-   * The failure to read from source is dealt with specially, in the CopyMapper.
-   * Such failures may be skipped if the DistCpOptions indicate so.
-   * Write failures are intolerable, and amount to CopyMapper failure.
-   */
-  @SuppressWarnings("serial")
-  public static class CopyReadException extends IOException {
-    public CopyReadException(Throwable rootCause) {
-      super(rootCause);
+    private static short getReplicationFactor(
+            EnumSet<FileAttribute> fileAttributes, CopyListingFileStatus source,
+            FileSystem targetFS, Path tmpTargetPath) {
+        return fileAttributes.contains(FileAttribute.REPLICATION)
+                ? source.getReplication()
+                : targetFS.getDefaultReplication(tmpTargetPath);
     }
-  }
+
+    /**
+     * @return the block size of the source file if we need to preserve either
+     * the block size or the checksum type. Otherwise the default block
+     * size of the target FS.
+     */
+    private static long getBlockSize(
+            EnumSet<FileAttribute> fileAttributes, CopyListingFileStatus source,
+            FileSystem targetFS, Path tmpTargetPath) {
+        boolean preserve = fileAttributes.contains(FileAttribute.BLOCKSIZE)
+                || fileAttributes.contains(FileAttribute.CHECKSUMTYPE);
+        return preserve ? source.getBlockSize() : targetFS
+                .getDefaultBlockSize(tmpTargetPath);
+    }
+
+    /**
+     * Special subclass of IOException. This is used to distinguish read-operation
+     * failures from other kinds of IOExceptions.
+     * The failure to read from source is dealt with specially, in the CopyMapper.
+     * Such failures may be skipped if the DistCpOptions indicate so.
+     * Write failures are intolerable, and amount to CopyMapper failure.
+     */
+    @SuppressWarnings("serial")
+    public static class CopyReadException extends IOException {
+        public CopyReadException(Throwable rootCause) {
+            super(rootCause);
+        }
+    }
 }

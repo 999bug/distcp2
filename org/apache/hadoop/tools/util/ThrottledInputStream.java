@@ -99,12 +99,13 @@ public class ThrottledInputStream extends InputStream {
    * Read bytes starting from the specified position. This requires rawStream is
    * an instance of {@link PositionedReadable}.
    */
-  public int read(long position, byte[] buffer, int offset, int length)
-      throws IOException {
+  public int read(long position, byte[] buffer, int offset, int length) throws IOException {
+
     if (!(rawStream instanceof PositionedReadable)) {
       throw new UnsupportedOperationException(
           "positioned read is not supported by the internal stream");
     }
+    // 如果发现字节传输超过指定的可容忍最大值，则在一段时间内休眠（）
     throttle();
     int readLen = ((PositionedReadable) rawStream).read(position, buffer,
         offset, length);
