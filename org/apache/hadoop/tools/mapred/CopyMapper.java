@@ -22,8 +22,11 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.channels.AsynchronousSocketChannel;
 import java.util.Arrays;
 import java.util.EnumSet;
+import java.util.concurrent.Future;
 
 import org.apache.commons.lang.exception.ExceptionUtils;
 import org.apache.commons.logging.Log;
@@ -41,6 +44,9 @@ import org.apache.hadoop.tools.DistCpConstants;
 import org.apache.hadoop.tools.DistCpOptionSwitch;
 import org.apache.hadoop.tools.DistCpOptions;
 import org.apache.hadoop.tools.DistCpOptions.FileAttribute;
+import org.apache.hadoop.tools.appendnf.SyncClient;
+import org.apache.hadoop.tools.appendnf.consts.I2Const;
+import org.apache.hadoop.tools.appendnf.consts.TransDTO;
 import org.apache.hadoop.tools.mapred.RetriableFileCopyCommand.CopyReadException;
 import org.apache.hadoop.tools.util.DistCpUtils;
 import org.apache.hadoop.util.StringUtils;
@@ -97,8 +103,9 @@ public class CopyMapper extends Mapper<Text, CopyListingFileStatus, Text, Text> 
     /**
      * Implementation of the Mapper::setup() method. This extracts the DistCp-
      * options specified in the Job's configuration, to set up the Job.
+     *
      * @param context Mapper's context.
-     * @throws IOException On IO failure.
+     * @throws IOException          On IO failure.
      * @throws InterruptedException If the job is interrupted.
      */
     @Override
@@ -187,7 +194,7 @@ public class CopyMapper extends Mapper<Text, CopyListingFileStatus, Text, Text> 
      * Find entry from distributed cache
      *
      * @param cacheFiles - All localized cache files
-     * @param fileName - fileName to search
+     * @param fileName   - fileName to search
      * @return Path of the filename if found, else null
      */
     private Path findCacheFile(Path[] cacheFiles, String fileName) {
@@ -205,7 +212,8 @@ public class CopyMapper extends Mapper<Text, CopyListingFileStatus, Text, Text> 
 
     /**
      * Implementation of the Mapper::map(). Does the copy.
-     * @param relPath The target path.
+     *
+     * @param relPath          The target path.
      * @param sourceFileStatus The source path.
      * @throws IOException
      * @throws InterruptedException
@@ -213,94 +221,19 @@ public class CopyMapper extends Mapper<Text, CopyListingFileStatus, Text, Text> 
     @Override
     public void map(Text relPath, CopyListingFileStatus sourceFileStatus,
                     Context context) throws IOException, InterruptedException {
-        Path sourcePath = sourceFileStatus.getPath();
-        logger.warn("===========map {} start!==============", a);
-        logger.info("sourcePath {}", sourcePath);
-        if (LOG.isDebugEnabled())
-            LOG.debug("DistCpMapper::map(): Received " + sourcePath + ", " + relPath);
 
-        Path target = new Path(targetWorkPath.makeQualified(targetFS.getUri(),
-                targetFS.getWorkingDirectory()) + relPath.toString());
-        logger.info("target {}", target);
+        // 开启客户端
+        TransDTO transDTO = SyncClient.getInstance().syncClient(sourceFileStatus, context);
+        InetSocketAddress address = new InetSocketAddress("192.168.46.11", I2Const.TRANSFER_FILE);
+        // 传输文件
 
-        EnumSet<DistCpOptions.FileAttribute> fileAttributes
-                = getFileAttributeSettings(context);
-        final boolean preserveRawXattrs = context.getConfiguration().getBoolean(
-                DistCpConstants.CONF_LABEL_PRESERVE_RAWXATTRS, false);
-
-        final String description = "Copying " + sourcePath + " to " + target;
-        context.setStatus(description);
-
-        LOG.info(description);
-
+        AsynchronousSocketChannel socketChannel = AsynchronousSocketChannel.open();
+        Future<Void> connect = socketChannel.connect(address);
         try {
-            CopyListingFileStatus sourceCurrStatus;
-            FileSystem sourceFS;
-            try {
-                sourceFS = sourcePath.getFileSystem(conf);
-                final boolean preserveXAttrs =
-                        fileAttributes.contains(FileAttribute.XATTR);
-                // 设置源文件状态
-                sourceCurrStatus = DistCpUtils.toCopyListingFileStatusHelper(sourceFS,
-                        sourceFS.getFileStatus(sourcePath),
-                        fileAttributes.contains(FileAttribute.ACL),
-                        preserveXAttrs, preserveRawXattrs,
-                        sourceFileStatus.getChunkOffset(),
-                        sourceFileStatus.getChunkLength());
-            } catch (FileNotFoundException e) {
-                throw new IOException(new RetriableFileCopyCommand.CopyReadException(e));
-            }
-
-            FileStatus targetStatus = null;
-
-            try {
-                targetStatus = targetFS.getFileStatus(target);
-            } catch (FileNotFoundException ignore) {
-                if (LOG.isDebugEnabled())
-                    LOG.debug("Path could not be found: " + target, ignore);
-            }
-
-            if (targetStatus != null &&
-                    (targetStatus.isDirectory() != sourceCurrStatus.isDirectory())) {
-                throw new IOException("Can't replace " + target + ". Target is " +
-                        getFileType(targetStatus) + ", Source is " + getFileType(sourceCurrStatus));
-            }
-            // 如果源文件是目录，则创建一个目录
-            if (sourceCurrStatus.isDirectory()) {
-                createTargetDirsWithRetry(description, target, context);
-                return;
-            }
-            // 设置 文件Action
-            FileAction action = checkUpdate(sourceFS, sourceCurrStatus, target,
-                    targetStatus);
-
-            Path tmpTarget = target;
-            if (action == FileAction.SKIP) {
-                LOG.info("Skipping copy of " + sourceCurrStatus.getPath()
-                        + " to " + target);
-                updateSkipCounters(context, sourceCurrStatus);
-                context.write(null, new Text("SKIP: " + sourceCurrStatus.getPath()));
-
-                if (verboseLog) {
-                    context.write(null,
-                            new Text("FILE_SKIPPED: source=" + sourceFileStatus.getPath()
-                                    + ", size=" + sourceFileStatus.getLen() + " --> "
-                                    + "target=" + target + ", size=" + (targetStatus == null ?
-                                    0 : targetStatus.getLen())));
-                }
-            } else {// overwrite 和 append 都执行此方法
-                if (sourceCurrStatus.isSplit()) {
-                    tmpTarget = DistCpUtils.getSplitChunkPath(target, sourceCurrStatus);
-                }
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("copying " + sourceCurrStatus + " " + tmpTarget);
-                }// 主要拷贝实现的地方
-                copyFileWithRetry(description, sourceCurrStatus, tmpTarget, targetStatus, context, action, fileAttributes);
-            }
-            DistCpUtils.preserve(target.getFileSystem(conf), tmpTarget, sourceCurrStatus, fileAttributes, preserveRawXattrs);
-            logger.warn("===========map {} end!==============", a++);
-        } catch (IOException exception) {
-            handleFailures(exception, sourceFileStatus, target, context);
+            long bytesCopied = new org.apache.hadoop.tools.appendnf.RetriableFileCopyCommand("null", transDTO.getAction())
+                    .execute(sourceFileStatus, transDTO.getStatus(), transDTO.getAction(), context, socketChannel);
+        } catch (Throwable throwable) {
+            throwable.printStackTrace();
         }
 
     }
@@ -395,6 +328,7 @@ public class CopyMapper extends Mapper<Text, CopyListingFileStatus, Text, Text> 
                                          long value) {
         context.getCounter(counter).increment(value);
     }
+
     // CopyListingFileStatus 源文件相关信息 length:3205,isDir:false,blockSize:134563,modificationTime:,等等
     private FileAction checkUpdate(FileSystem sourceFS,
                                    CopyListingFileStatus source, Path target, FileStatus targetFileStatus)
@@ -417,6 +351,7 @@ public class CopyMapper extends Mapper<Text, CopyListingFileStatus, Text, Text> 
         }
         return FileAction.OVERWRITE;
     }
+
     // 判断是否需要跳过此文件
     private boolean canSkip(FileSystem sourceFS, CopyListingFileStatus source,
                             FileStatus target) throws IOException {
@@ -425,10 +360,10 @@ public class CopyMapper extends Mapper<Text, CopyListingFileStatus, Text, Text> 
         }
         boolean sameLength = target.getLen() == source.getLen();
         boolean sameBlockSize = source.getBlockSize() == target.getBlockSize() || !preserve.contains(FileAttribute.BLOCKSIZE);
-        logger.warn("source BlockSize " +source.getBlockSize());
-        logger.warn("target BlockSize() " +target.getBlockSize());
+        logger.warn("source BlockSize " + source.getBlockSize());
+        logger.warn("target BlockSize() " + target.getBlockSize());
 
-        logger.warn("skip " +  DistCpUtils.checksumsAreEqual(sourceFS, source.getPath(), null, targetFS, target.getPath()));
+        logger.warn("skip " + DistCpUtils.checksumsAreEqual(sourceFS, source.getPath(), null, targetFS, target.getPath()));
         if (sameLength && sameBlockSize) {
             return skipCrc ||
                     DistCpUtils.checksumsAreEqual(sourceFS, source.getPath(), null, targetFS, target.getPath());
