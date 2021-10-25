@@ -119,13 +119,14 @@ public class RetriableFileCopyCommand extends RetriableCommand {
             final FileSystem sourceFS = sourcePath.getFileSystem(configuration);
             final FileChecksum sourceChecksum = fileAttributes.contains(FileAttribute.CHECKSUMTYPE) ?
                     sourceFS.getFileChecksum(sourcePath) : null;
-
+            logger.warn("sourceChecksum " + sourceChecksum);
             long offset = (action == FileAction.APPEND) ?
                     targetFS.getFileStatus(target).getLen() : source.getChunkOffset();
             logger.warn("offset " + offset);
             long bytesRead = copyToFile(targetPath, targetFS, source,
                     offset, context, fileAttributes, sourceChecksum);
 
+            logger.warn("sourceChecksum " + sourceChecksum);
             if (!source.isSplit()) {
                 // 检查传输文件的大小是否一致
                 compareFileLengths(source, targetPath, configuration, bytesRead
@@ -182,7 +183,7 @@ public class RetriableFileCopyCommand extends RetriableCommand {
         int copyBufferSize = context.getConfiguration().getInt(
                 DistCpOptionSwitch.COPY_BUFFER_SIZE.getConfigLabel(),
                 DistCpConstants.COPY_BUFFER_SIZE_DEFAULT);
-
+        logger.info("copyBufferSize " + copyBufferSize);
         final OutputStream outStream;
         if (action == FileAction.OVERWRITE) {
             final short repl = getReplicationFactor(fileAttributes, source,
@@ -253,13 +254,13 @@ public class RetriableFileCopyCommand extends RetriableCommand {
     private Path getTmpFile(Path target, Mapper.Context context) {
         Path targetWorkPath = new Path(context.getConfiguration().
                 get(DistCpConstants.CONF_LABEL_TARGET_WORK_PATH));
-
+        logger.warn("targetWorkPath: " + targetWorkPath);
         Path root = target.equals(targetWorkPath) ? targetWorkPath.getParent() : targetWorkPath;
         logger.info("Creating temp file: " +
                 new Path(root, ".distcp.tmp." + context.getTaskAttemptID().toString()));
         return new Path(root, ".distcp.tmp." + context.getTaskAttemptID().toString());
     }
-
+static  int a = 1;
     @VisibleForTesting
     long copyBytes(CopyListingFileStatus source2, long sourceOffset,
                    OutputStream outStream, int bufferSize, Mapper.Context context)
@@ -286,7 +287,7 @@ public class RetriableFileCopyCommand extends RetriableCommand {
                 if (action == FileAction.APPEND) {
                     sourceOffset += bytesRead;
                 }
-
+                 logger.warn("我执行了几次？？" + a++);
                 outStream.write(buf, 0, bytesRead);
                 // 打印 map 的进度
                 updateContextStatus(totalBytesRead, context, source2);
@@ -334,6 +335,7 @@ public class RetriableFileCopyCommand extends RetriableCommand {
             FileSystem fs = path.getFileSystem(conf);
             long bandwidthMB = conf.getInt(DistCpConstants.CONF_LABEL_BANDWIDTH_MB,
                     DistCpConstants.DEFAULT_BANDWIDTH_MB);
+            logger.warn("bandwidthMB " + bandwidthMB);
             FSDataInputStream in = fs.open(path);
             return new ThrottledInputStream(in, bandwidthMB * 1024 * 1024);
         } catch (IOException e) {

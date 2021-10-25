@@ -425,6 +425,9 @@ public class CopyMapper extends Mapper<Text, CopyListingFileStatus, Text, Text> 
         }
         boolean sameLength = target.getLen() == source.getLen();
         boolean sameBlockSize = source.getBlockSize() == target.getBlockSize() || !preserve.contains(FileAttribute.BLOCKSIZE);
+        logger.warn("source BlockSize " +source.getBlockSize());
+        logger.warn("target BlockSize() " +target.getBlockSize());
+
         logger.warn("skip " +  DistCpUtils.checksumsAreEqual(sourceFS, source.getPath(), null, targetFS, target.getPath()));
         if (sameLength && sameBlockSize) {
             return skipCrc ||

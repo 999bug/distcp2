@@ -510,7 +510,7 @@ public class DistCp extends Configured implements Tool {
    */
   public static void main(String argv[]) {
     int exitCode;
-    argv = new String[]{"-append","-update","hdfs://192.168.46.11:9000/once11","hdfs://192.168.48.21:9000/once11/ff"};
+    argv = new String[]{"-append","-update","hdfs://192.168.46.11:9000/once11","hdfs://192.168.48.11:9000/once11/f1"};
     try {
       DistCp distCp = new DistCp();
       Cleanup CLEANUP = new Cleanup(distCp);

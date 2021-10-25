@@ -46,10 +46,7 @@ import org.apache.hadoop.util.StringUtils;
 
 import java.io.IOException;
 import java.text.DecimalFormat;
-import java.util.EnumSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.Map.Entry;
 
 /**
@@ -554,7 +551,10 @@ public class DistCpUtils {
     try {
       sourceChecksum = sourceChecksum != null ? sourceChecksum : sourceFS
           .getFileChecksum(source);
+      String str = sourceChecksum.toString().split(":")[1];
+      logger.warn("sourceChecksum "+str );
       targetChecksum = targetFS.getFileChecksum(target);
+      logger.warn("targetChecksum "+targetChecksum );
     } catch (IOException e) {
       logger.error("Unable to retrieve checksum for " + source + " or " + target, e);
     }
